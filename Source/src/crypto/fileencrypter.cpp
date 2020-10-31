@@ -107,7 +107,9 @@ namespace SLNet
 
 				// #med - review the return value here - it's not documented in the manual
 				// note: cleanup() must be called so to not leak resources generated during the EVP_SignalFinal()-call
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 				(void)EVP_MD_CTX_cleanup(rsaSigningContext);
+#endif
 				EVP_MD_CTX_destroy(rsaSigningContext);
 
 				return success ? m_sigBuffer : nullptr;
@@ -158,7 +160,9 @@ namespace SLNet
 				const int authenticStatus = EVP_DigestVerifyFinal(rsaVerifyContext, const_cast<unsigned char*>(signature), signatureLength);
 				// #med - review the return value here - it's not documented in the manual
 				// note: cleanup() must be called so to not leak resources generated during the EVP_SignalFinal()-call
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 				(void)EVP_MD_CTX_cleanup(rsaVerifyContext);
+#endif
 				EVP_MD_CTX_destroy(rsaVerifyContext);
 
 				if (authenticStatus == 1) {

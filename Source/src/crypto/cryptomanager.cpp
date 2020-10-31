@@ -33,7 +33,7 @@ namespace SLNet
 				ERR_load_crypto_strings();
 				OpenSSL_add_all_algorithms();
 
-#ifdef _WIN32
+#if defined(_WIN32) && OPENSSL_VERSION_NUMBER < 0x10100000L
 				// #med - once OpenSSL support for older OpenSSL versions is dropped, just remove this call - newer OpenSSL versions provide proper entropy
 				//        also on Windows platforms - https://security.stackexchange.com/questions/7718/openssl-rand-poll-good-enough
 				// RAND_screen() is only required on Windows - on Linux RAND_poll() will be used (called implicitly by the following RAND_bytes()-call) and
@@ -48,6 +48,11 @@ namespace SLNet
 				if (RAND_pseudo_bytes(m_initializationVector, EVP_MAX_IV_LENGTH) == 0) {
 					return false; // failed to initialize the initialization vector
 				}
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				m_decryptionContext = nullptr;
+				m_encryptionContext = nullptr;
+#endif
 
 				m_Initialized = true;
 				return true;
@@ -69,21 +74,44 @@ namespace SLNet
 
 				// #high - review usage of the CBC mode here --- not the best nowadays
 				// #med - add engine support to use HW-acceleration
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				m_encryptionContext = EVP_CIPHER_CTX_new();
+
+				if (!m_encryptionContext) {
+					return false;
+				}
+
+				if (EVP_EncryptInit_ex(m_encryptionContext, EVP_aes_256_cbc(), nullptr, m_sessionKey, m_initializationVector) == 0) {
+#else
 				if (EVP_EncryptInit_ex(&m_encryptionContext, EVP_aes_256_cbc(), nullptr, m_sessionKey, m_initializationVector) == 0) {
+#endif
 					return false; // failed to initialize the encryption context
 				}
 
 				int bytesWritten1;
 				// note: static_cast<> safe here, since GetRequiredEncrpytionBufferSize()-check ensured dataLength is <= int::max()
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				if (EVP_EncryptUpdate(m_encryptionContext, outBuffer, &bytesWritten1, plaintext, static_cast<int>(dataLength)) == 0) {
+#else
 				if (EVP_EncryptUpdate(&m_encryptionContext, outBuffer, &bytesWritten1, plaintext, static_cast<int>(dataLength)) == 0) {
+#endif
 					return false; // encryption failed
 				}
 				RakAssert(static_cast<size_t>(bytesWritten1) <= inOutBufferSize);
 				int bytesWritten2;
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				if (EVP_EncryptFinal_ex(m_encryptionContext, outBuffer + bytesWritten1, &bytesWritten2) == 0) {
+#else
 				if (EVP_EncryptFinal_ex(&m_encryptionContext, outBuffer + bytesWritten1, &bytesWritten2) == 0) {
+#endif
 					return false; // failed final encryption step
 				}
 				RakAssert(static_cast<size_t>(bytesWritten1) + static_cast<size_t>(bytesWritten2) <= inOutBufferSize);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				EVP_CIPHER_CTX_free(m_encryptionContext);
+				m_encryptionContext = nullptr;
+#endif
 
 				inOutBufferSize = static_cast<size_t>(bytesWritten1) + static_cast<size_t>(bytesWritten2);
 				return true;
@@ -112,21 +140,45 @@ namespace SLNet
 
 				// #high - review usage of the CBC mode here --- not the best nowadays
 				// #med - add engine support to use HW-acceleration
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				m_decryptionContext = EVP_CIPHER_CTX_new();
+
+				if (!m_decryptionContext) {
+					return false;
+				}
+
+				if (EVP_DecryptInit_ex(m_decryptionContext, EVP_aes_256_cbc(), nullptr, m_sessionKey, m_initializationVector) == 0) {
+#else
 				if (EVP_DecryptInit_ex(&m_decryptionContext, EVP_aes_256_cbc(), nullptr, m_sessionKey, m_initializationVector) == 0) {
+#endif
 					return false; // failed to initialize the decryption context
 				}
 
 				int bytesWritten1;
 				// static cast safe due to size-check above
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				if (EVP_DecryptUpdate(m_decryptionContext, outBuffer, &bytesWritten1, encryptedtext, static_cast<int>(dataLength)) == 0) {
+#else
 				if (EVP_DecryptUpdate(&m_decryptionContext, outBuffer, &bytesWritten1, encryptedtext, static_cast<int>(dataLength)) == 0) {
+#endif
 					return false; // decryption failed
 				}
 				RakAssert(static_cast<size_t>(bytesWritten1) <= inOutBufferSize);
 				int bytesWritten2;
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				if (EVP_DecryptFinal_ex(m_decryptionContext, outBuffer + bytesWritten1, &bytesWritten2) == 0) {
+#else
 				if (EVP_DecryptFinal_ex(&m_decryptionContext, outBuffer + bytesWritten1, &bytesWritten2) == 0) {
+#endif
 					return false; // failed final decryption step
 				}
 				RakAssert(static_cast<size_t>(bytesWritten1) + static_cast<size_t>(bytesWritten2) <= inOutBufferSize);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				EVP_CIPHER_CTX_free(m_decryptionContext);
+				m_decryptionContext = nullptr;
+#endif
 
 				inOutBufferSize = static_cast<size_t>(bytesWritten1) + static_cast<size_t>(bytesWritten2);
 				return true;
@@ -174,8 +226,14 @@ namespace SLNet
 			}
 
 			// initialization list
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+			EVP_CIPHER_CTX* CCryptoManager::m_decryptionContext;
+			EVP_CIPHER_CTX* CCryptoManager::m_encryptionContext;
+#else
 			EVP_CIPHER_CTX CCryptoManager::m_decryptionContext;
 			EVP_CIPHER_CTX CCryptoManager::m_encryptionContext;
+#endif
+			
 			unsigned char CCryptoManager::m_sessionKey[EVP_MAX_KEY_LENGTH];
 			unsigned char CCryptoManager::m_initializationVector[EVP_MAX_IV_LENGTH];
 			bool CCryptoManager::m_Initialized = false;

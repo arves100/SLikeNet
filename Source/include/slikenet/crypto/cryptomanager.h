@@ -20,8 +20,13 @@ namespace SLNet
 				// class members
 				// note: using distinct contexts for encryption/decryption to prevent potential for race conditions
 				// #med - consider moving to SessionEncrypter class
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+				static EVP_CIPHER_CTX* m_decryptionContext;
+				static EVP_CIPHER_CTX* m_encryptionContext;
+#else
 				static EVP_CIPHER_CTX m_decryptionContext;
 				static EVP_CIPHER_CTX m_encryptionContext;
+#endif
 				static unsigned char m_initializationVector[EVP_MAX_IV_LENGTH];
 				static unsigned char m_sessionKey[EVP_MAX_KEY_LENGTH];
 				static bool m_Initialized;
